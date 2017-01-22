@@ -283,52 +283,14 @@
             <div class="panel panel-default">
                 <div class="panel-heading"></div>
                 <div class="panel-body">
-                    <div class="alert alert-info">
-                        Below is the configuration file for your daemon on this node. We recommend <strong>not</strong> simply copy and pasting the code below unless you know what you are doing. You should run the <code>auto-installer</code> or <code>auto-updater</code> to setup the daemon.
+                    <div class="col-md-8">
+                        <p class="text-muted small">To simplify the configuration of nodes it is possible to fetch the config from the panel. A token is required for this process. The button below will generate a token and provide you with the commands necessary for automatic configuration of the node. Be aware that these tokens are only valid for 5 minutes.</p>
+                    </div>
+                    <div class="col-md-4 text-center">
+                        <p><button type="button" id="configTokenBtn" class="btn btn-sm btn-primary" style="width:100%;">Generate Token</button></p>
                     </div>
                     <div class="col-md-12">
-                        <pre><code>{
-    "web": {
-        "host": "0.0.0.0",
-        "listen": {{ $node->daemonListen }},
-        "ssl": {
-            "enabled": {{ $node->scheme === 'https' ? 'true' : 'false' }},
-            "certificate": "/etc/letsencrypt/live/{{ $node->fqdn }}/fullchain.pem",
-            "key": "/etc/letsencrypt/live/{{ $node->fqdn }}/privkey.pem"
-        }
-    },
-    "docker": {
-        "socket": "/var/run/docker.sock",
-        "autoupdate_images": true
-    },
-    "sftp": {
-        "path": "{{ $node->daemonBase }}",
-        "port": {{ $node->daemonSFTP }},
-        "container": "ptdl-sftp"
-    },
-    "query": {
-        "kill_on_fail": true,
-        "fail_limit": 5
-    },
-    "logger": {
-        "path": "logs/",
-        "src": false,
-        "level": "info",
-        "period": "1d",
-        "count": 3
-    },
-    "remote": {
-        "base": "{{ config('app.url') }}",
-        "download": "{{ route('remote.download') }}",
-        "installed": "{{ route('remote.install') }}"
-    },
-    "uploads": {
-        "size_limit": {{ $node->upload_size }}
-    },
-    "keys": [
-        "{{ $node->daemonSecret }}"
-    ]
-}</code></pre>
+                        <pre><code>{{ $node->getConfigurationAsJson(true) }}</code></pre>
                     </div>
                 </div>
             </div>
@@ -535,6 +497,26 @@ $(document).ready(function () {
             event.target.submit();
         });
     });
+
+    $('#configTokenBtn').on('click', function (event) {
+        $.getJSON('{{ route('admin.nodes.configuration-token', $node->id) }}')
+            .done(function (data) {
+                swal({
+                    type: 'success',
+                    title: 'Token created.',
+                    text: 'Your token will expire at ' + data.expires_at + '<br /><br />' +
+                          '<p>To auto-configure your node run<br /><small><pre>npm run configure -- --panel-url '+window.location.protocol+'//{{ config('app.url') }} --token '+data.token+'</pre></small></p>',
+                    html: true
+                })
+            })
+            .fail(function () {
+                swal({
+                    title: 'Error',
+                    text: 'Something went wrong creating your token.',
+                    type: 'error'
+                });
+            })
+    })
 
     $('.cloneElement').on('click', function (event) {
         event.preventDefault();

@@ -64,9 +64,11 @@ class BaseRoutes
                 'uses' => 'Base\AccountController@index',
             ]);
             $router->post('/password', [
+                'as' => 'account.password',
                 'uses' => 'Base\AccountController@password',
             ]);
             $router->post('/email', [
+                'as' => 'account.email',
                 'uses' => 'Base\AccountController@email',
             ]);
         });
@@ -85,7 +87,7 @@ class BaseRoutes
             ]);
             $router->get('/new', [
                 'as' => 'account.api.new',
-                'uses' => 'Base\APIController@new',
+                'uses' => 'Base\APIController@create',
             ]);
             $router->post('/new', [
                 'uses' => 'Base\APIController@save',
@@ -113,6 +115,7 @@ class BaseRoutes
                 'uses' => 'Base\SecurityController@revoke',
             ]);
             $router->put('/totp', [
+                'as' => 'account.security.totp',
                 'uses' => 'Base\SecurityController@generateTotp',
             ]);
             $router->post('/totp', [

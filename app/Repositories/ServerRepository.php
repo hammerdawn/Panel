@@ -52,14 +52,26 @@ class ServerRepository
      * format: mumble_67c7a4b0.
      *
      * @param  string $name
-     * @param  string $uuid
+     * @param  string $identifier
      * @return string
      */
-    protected function generateSFTPUsername($name, $uuid = null)
+    protected function generateSFTPUsername($name, $identifier = null)
     {
-        $uuid = is_null($uuid) ? str_random(8) : $uuid;
+        if (is_null($identifier) || ! ctype_alnum($identifier)) {
+            $unique = str_random(8);
+        } else {
+            if (strlen($identifier) < 8) {
+                $unique = $identifier . str_random((8 - strlen($identifier)));
+            } else {
+                $unique = substr($identifier, 0, 8);
+            }
+        }
 
-        return strtolower(substr(preg_replace('/\s+/', '', $name), 0, 6) . '_' . $uuid);
+        // Filter the Server Name
+        $name = trim(preg_replace('/[^\w]+/', '', $name), '_');
+        $name = (strlen($name) < 1) ? str_random(6) : $name;
+
+        return strtolower(substr($name, 0, 6) . '_' . $unique);
     }
 
     /**
@@ -73,14 +85,15 @@ class ServerRepository
         // Validate Fields
         $validator = Validator::make($data, [
             'owner' => 'bail|required',
-            'name' => 'required|regex:/^([\w -]{4,35})$/',
+            'name' => 'required|regex:/^([\w .-]{1,200})$/',
             'memory' => 'required|numeric|min:0',
             'swap' => 'required|numeric|min:-1',
             'io' => 'required|numeric|min:10|max:1000',
             'cpu' => 'required|numeric|min:0',
             'disk' => 'required|numeric|min:0',
-            'service' => 'bail|required|numeric|min:1|exists:services,id',
-            'option' => 'bail|required|numeric|min:1|exists:service_options,id',
+            'service' => 'required|numeric|min:1|exists:services,id',
+            'option' => 'required|numeric|min:1|exists:service_options,id',
+            'pack' => 'sometimes|nullable|numeric|min:0',
             'startup' => 'string',
             'custom_image_name' => 'required_if:use_custom_image,on',
             'auto_deploy' => 'sometimes|boolean',
@@ -156,6 +169,18 @@ class ServerRepository
             throw new DisplayException('The requested service option does not exist for the specified service.');
         }
 
+        // Validate the Pack
+        if ($data['pack'] == 0) {
+            $data['pack'] = null;
+        }
+
+        if (! is_null($data['pack'])) {
+            $pack = Models\ServicePack::where('id', $data['pack'])->where('option', $data['option'])->first();
+            if (! $pack) {
+                throw new DisplayException('The requested service pack does not seem to exist for this combination.');
+            }
+        }
+
         // Load up the Service Information
         $service = Models\Service::find($option->parent_service);
 
@@ -166,15 +191,15 @@ class ServerRepository
             foreach ($variables as $variable) {
 
                 // Is the variable required?
-                if (! $data['env_' . $variable->env_variable]) {
+                if (! isset($data['env_' . $variable->env_variable])) {
                     if ($variable->required === 1) {
                         throw new DisplayException('A required service option variable field (env_' . $variable->env_variable . ') was missing from the request.');
                     }
-                    $variableList = array_merge($variableList, [[
+                    $variableList[] = [
                         'id' => $variable->id,
                         'env' => $variable->env_variable,
                         'val' => $variable->default_value,
-                    ]]);
+                    ];
                     continue;
                 }
 
@@ -183,11 +208,11 @@ class ServerRepository
                     throw new DisplayException('Failed to validate service option variable field (env_' . $variable->env_variable . ') aganist regex (' . $variable->regex . ').');
                 }
 
-                $variableList = array_merge($variableList, [[
+                $variableList[] = [
                     'id' => $variable->id,
                     'env' => $variable->env_variable,
                     'val' => $data['env_' . $variable->env_variable],
-                ]]);
+                ];
                 continue;
             }
         }
@@ -247,6 +272,7 @@ class ServerRepository
                 'allocation' => $allocation->id,
                 'service' => $data['service'],
                 'option' => $data['option'],
+                'pack' => $data['pack'],
                 'startup' => $data['startup'],
                 'daemonSecret' => $uuid->generate('servers', 'daemonSecret'),
                 'image' => (isset($data['custom_image_name'])) ? $data['custom_image_name'] : $option->docker_image,
@@ -260,14 +286,13 @@ class ServerRepository
             $allocation->save();
 
             // Add Variables
-            $environmentVariables = [];
-            $environmentVariables = array_merge($environmentVariables, [
+            $environmentVariables = [
                 'STARTUP' => $data['startup'],
-            ]);
+            ];
+
             foreach ($variableList as $item) {
-                $environmentVariables = array_merge($environmentVariables, [
-                    $item['env'] => $item['val'],
-                ]);
+                $environmentVariables[$item['env']] = $item['val'];
+
                 Models\ServerVariables::create([
                     'server_id' => $server->id,
                     'variable_id' => $item['id'],
@@ -312,6 +337,7 @@ class ServerRepository
                     'service' => [
                         'type' => $service->file,
                         'option' => $option->tag,
+                        'pack' => (isset($pack)) ? $pack->uuid : null,
                     ],
                     'keys' => [
                         (string) $server->daemonSecret => $this->daemonPermissions,
@@ -346,7 +372,7 @@ class ServerRepository
         // Validate Fields
         $validator = Validator::make($data, [
             'owner' => 'email|exists:users,email',
-            'name' => 'regex:([\w -]{4,35})',
+            'name' => 'regex:([\w .-]{1,200})',
         ]);
 
         // Run validator, throw catchable and displayable exception if it fails.
@@ -672,21 +698,21 @@ class ServerRepository
                 foreach ($variables as &$variable) {
                     // Move on if the new data wasn't even sent
                     if (! isset($data[$variable->env_variable])) {
-                        $variableList = array_merge($variableList, [[
+                        $variableList[] = [
                             'id' => $variable->id,
                             'env' => $variable->env_variable,
                             'val' => $variable->a_currentValue,
-                        ]]);
+                        ];
                         continue;
                     }
 
                     // Update Empty but skip validation
                     if (empty($data[$variable->env_variable])) {
-                        $variableList = array_merge($variableList, [[
+                        $variableList[] = [
                             'id' => $variable->id,
                             'env' => $variable->env_variable,
                             'val' => null,
-                        ]]);
+                        ];
                         continue;
                     }
 
@@ -708,23 +734,20 @@ class ServerRepository
                         throw new DisplayException('Failed to validate service option variable field (' . $variable->env_variable . ') aganist regex (' . $variable->regex . ').');
                     }
 
-                    $variableList = array_merge($variableList, [[
+                    $variableList[] = [
                         'id' => $variable->id,
                         'env' => $variable->env_variable,
                         'val' => $data[$variable->env_variable],
-                    ]]);
+                    ];
                 }
             }
 
             // Add Variables
-            $environmentVariables = [];
-            $environmentVariables = array_merge($environmentVariables, [
+            $environmentVariables = [
                 'STARTUP' => $server->startup,
-            ]);
+            ];
             foreach ($variableList as $item) {
-                $environmentVariables = array_merge($environmentVariables, [
-                    $item['env'] => $item['val'],
-                ]);
+                $environmentVariables[$item['env']] = $item['val'];
 
                 // Update model or make a new record if it doesn't exist.
                 $model = Models\ServerVariables::firstOrNew([

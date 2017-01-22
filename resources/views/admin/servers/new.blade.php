@@ -43,7 +43,7 @@
                     <label for="name" class="control-label">Server Name</label>
                     <div>
                         <input type="text" autocomplete="off" name="name" class="form-control" value="{{ old('name') }}" />
-                        <p class="text-muted"><small><em>Character limits: <code>a-zA-Z0-9_-</code> and <code>[Space]</code> (max 35 characters)</em></small></p>
+                        <p class="text-muted"><small><em>Character limits: <code>a-z A-Z 0-9 _ - .</code> and <code>[Space]</code> (max 200 characters).</em></small></p>
                     </div>
                 </div>
                 <div class="form-group col-md-6">
@@ -171,7 +171,7 @@
             </div>
             <div class="row">
                 <div class="col-md-12">
-                    <p class="text-muted"><small>If you do not want to limit CPU usage set the value to <code>0</code>. To determine a value, take the number <em>physical</em> cores and multiply it by 100. For example, on a quad core system <code>(4 * 100 = 400)</code> there is <code>400%</code> available. To limit a server to using half of a single core, you would set the value to <code>50</code>. To allow a server to use up to two physical cores, set the value to <code>200</code>. BlockIO should be a value between <code>10</code> and <code>1000</code>. Please see <a href="https://docs.docker.com/reference/run/#block-io-bandwidth-blkio-constraint" target="_blank">this documentation</a> for more information about it.</small><p>
+                    <p class="text-muted"><small>If you do not want to limit CPU usage set the value to <code>0</code>. To determine a value, take the number <em>physical</em> cores and multiply it by 100. For example, on a quad core system <code>(4 * 100 = 400)</code> there is <code>400%</code> available. To limit a server to using half of a single core, you would set the value to <code>50</code>. To allow a server to use up to two physical cores, set the value to <code>200</code>. BlockIO should be a value between <code>10</code> and <code>1000</code>. Please see <a href="https://docs.docker.com/engine/reference/run/#/block-io-bandwidth-blkio-constraint" target="_blank">this documentation</a> for more information about it.</small><p>
                 </div>
             </div>
         </div>
@@ -199,6 +199,15 @@
                                     <option disabled selected> -- Select a Service Option</option>
                                 </select>
                                 <p class="text-muted"><small>Select the type of service that this server will be running.</small></p>
+                            </div>
+                        </div>
+                        <div class="form-group col-md-12 hidden">
+                            <label for="option" class="control-label">Service Pack</label>
+                            <div>
+                                <select name="pack" id="getPack" class="form-control">
+                                    <option disabled selected> -- Select a Service Pack</option>
+                                </select>
+                                <p class="text-muted"><small>Select the service pack that should be used for this server. This option can be changed later.</small></p>
                             </div>
                         </div>
                     </div>
@@ -392,6 +401,7 @@ $(document).ready(function () {
         handleLoader('#load_services', true);
         $('#serviceOptions').slideUp();
         $('#getOption').html('<option disabled selected> -- Select a Service Option</option>');
+        $('#getPack').html('<option disabled selected> -- Select a Service Pack</option>');
 
         $.ajax({
             method: 'POST',
@@ -423,10 +433,11 @@ $(document).ready(function () {
         handleLoader('#serviceOptions', true);
         $('#serverVariables').html('');
         $('input[name="custom_image_name"]').val($(this).find(':selected').data('image'));
+        $('#getPack').html('<option disabled selected> -- Select a Service Pack</option>');
 
         $.ajax({
             method: 'POST',
-            url: '/admin/servers/new/service-variables',
+            url: '/admin/servers/new/option-details',
             headers: {
                 'X-CSRF-TOKEN': '{{ csrf_token() }}'
             },
@@ -436,6 +447,12 @@ $(document).ready(function () {
         }).done(function (data) {
             $('#startupExec').html(data.exec);
             $('input[name="startup"]').val(data.startup);
+
+            $.each(data.packs, function (i, item) {
+                $('#getPack').append('<option value="' + item.id + '">' + item.name + ' (' + item.version + ')</option>');
+            });
+            $('#getPack').append('<option value="0">No Service Pack</option>').parent().parent().removeClass('hidden');
+
             $.each(data.variables, function (i, item) {
                 var isRequired = (item.required === 1) ? '<span class="label label-primary">Required</span> ' : '';
                 var dataAppend = ' \
